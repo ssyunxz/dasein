@@ -107,5 +107,21 @@ export const SPINE_ARC_END_X = ARC_CENTER_X - SPINE_MID_RADIUS * Math.cos(SPINE_
 export const BOARD_INNER_X = TB_CORNER_X + 0.003
 export const BOARD_OUTER_X = BOOK_WIDTH / 2
 
-/** 앞표지 회전축: 속지 등 모서리의 앞면 라인 (세로 방향) */
+/** 속지 등 모서리의 앞면 라인 (세로 방향) */
 export const FRONT_PIVOT: [number, number, number] = [TB_CORNER_X, 0, TB_HALF_THICK + EPS]
+
+/**
+ * 앞표지 실제 경첩 축 = FRONT_PIVOT 라인을 표지 두께 + 여유만큼 바깥(+z)으로 올린 곳.
+ * 속지 앞면 라인에서 그대로 돌리면 표지 두께가 고정된 책등 표지를 뚫고 지나가므로,
+ * 축을 책등 윗면보다 높여 표지가 책등 위를 넘어가며 열리게 함 (실제 양장본 경첩과 비슷한 궤적).
+ */
+export const FRONT_HINGE_LIFT = BOARD_THICKNESS + 0.008
+export const FRONT_HINGE: [number, number, number] = [
+  FRONT_PIVOT[0],
+  FRONT_PIVOT[1],
+  FRONT_PIVOT[2] + FRONT_HINGE_LIFT,
+]
+
+/** 면지(앞표지 안쪽에 붙은 종이) — 가장자리에 표지 천이 접혀 들어온 폭만큼 안쪽 */
+export const ENDPAPER_COLOR = '#e2d2ad' // 누렇게 바랜 종이
+export const ENDPAPER_TURN_IN = 0.018

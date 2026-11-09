@@ -42,13 +42,14 @@ function createPageMaterial() {
     shader.uniforms.uSheet = { value: PAGE_SHEET_DENSITY }
     shader.uniforms.uSig = { value: PAGE_SIGNATURE_DENSITY }
     shader.vertexShader = shader.vertexShader
-      .replace('#include <common>', '#include <common>\nvarying vec3 vObjPos;')
-      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvObjPos = position;')
+      .replace('#include <common>', '#include <common>\nvarying vec3 vObjPos;\nvarying vec3 vObjNormal;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvObjPos = position;\nvObjNormal = normal;')
     shader.fragmentShader = shader.fragmentShader
       .replace(
         '#include <common>',
         `#include <common>
 varying vec3 vObjPos;
+varying vec3 vObjNormal;
 uniform float uSheet;
 uniform float uSig;
 float pageHash(float n) { return fract(sin(n * 12.9898) * 43758.5453); }`,
@@ -71,6 +72,10 @@ float pageHash(float n) { return fract(sin(n * 12.9898) * 43758.5453); }`,
   float sigFade = 1.0 - smoothstep(0.15, 0.5, fwidth(s));
   float sigLine = 1.0 - smoothstep(0.0, 0.05, min(g, 1.0 - g));
   shade *= 1.0 - 0.16 * sigLine * sigFade;
+
+  // 첫 페이지(앞/뒷면, 법선이 z 방향): 종이 결 선 없이 고른 크림색 종이
+  float flatPage = smoothstep(0.7, 0.95, abs(normalize(vObjNormal).z));
+  shade = mix(shade, 1.0, flatPage);
 
   diffuseColor.rgb *= shade;
 }`,

@@ -25,14 +25,18 @@ type Props = {
   children: ReactNode
   /** 처음 보이는 각도 [x, y, z] (라디안) */
   initialRotation?: [number, number, number]
+  /** true면 드래그 회전·관성·자동 회전을 모두 멈춤 (예: 책이 열려 있을 때) */
+  paused?: boolean
 }
 
 const _right = new Vector3()
 const _up = new Vector3()
 const _q = new Quaternion()
 
-export default function FreeRotate({ children, initialRotation = [0, 0, 0] }: Props) {
+export default function FreeRotate({ children, initialRotation = [0, 0, 0], paused = false }: Props) {
   const group = useRef<Group>(null)
+  const pausedRef = useRef(paused)
+  pausedRef.current = paused
   const { gl, camera } = useThree()
   const s = useRef({
     pointers: new Set<number>(),
@@ -61,6 +65,7 @@ export default function FreeRotate({ children, initialRotation = [0, 0, 0] }: Pr
     const st = s.current
 
     const onDown = (e: PointerEvent) => {
+      if (pausedRef.current) return
       st.pointers.add(e.pointerId)
       // 두 손가락(핀치 줌) 중에는 회전하지 않음
       st.dragging = st.pointers.size === 1
@@ -107,6 +112,13 @@ export default function FreeRotate({ children, initialRotation = [0, 0, 0] }: Pr
 
   useFrame((_, delta) => {
     const st = s.current
+    if (pausedRef.current) {
+      st.dragging = false
+      st.vx = st.vy = 0
+      st.auto = 0
+      st.idleSince = performance.now()
+      return
+    }
     if (st.dragging) return
     const dt = Math.min(delta, 0.05)
 
