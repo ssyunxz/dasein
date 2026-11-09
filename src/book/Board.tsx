@@ -1,13 +1,14 @@
 import { useMemo } from 'react'
 import {
+  CanvasTexture,
   DoubleSide,
   ExtrudeGeometry,
   MeshPhysicalMaterial,
   MeshStandardMaterial,
   Shape,
   PlaneGeometry,
+  SRGBColorSpace,
   Vector2,
-  type Material,
 } from 'three'
 import { toCreasedNormals } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
 import { TessellateModifier } from 'three/examples/jsm/modifiers/TessellateModifier.js'
@@ -24,14 +25,13 @@ import {
   ENDPAPER_COLOR,
   ENDPAPER_TURN_IN,
 } from './bookConfig'
+import { applyBend, type BendUniform } from './bend'
 import { createNoise, smoothstep } from './geometryUtils'
 
 const EDGE_BEVEL = 0.0025 // 판 가장자리 둥글림
 const EDGE_WAVE = CORNER_WEAR * 0.08 // 가장자리 물결 진폭
 const STEP = 0.015 // 외곽선 샘플 간격
 
-/** 휨 정도를 담는 uniform — 매 프레임 값만 바꾸면 셰이더에서 바로 반영 */
-export type BendUniform = { value: number }
 
 type Props = {
   side: 'front' | 'back'
@@ -132,34 +132,39 @@ function createEndpaperGeometry(side: 'front' | 'back') {
   return geo
 }
 
-/**
- * 휨 셰이더 패치: 책배 쪽으로 갈수록 s² 만큼 +z로 밀고, 법선도 그 기울기만큼 보정.
- * 표지판과 면지가 같은 식을 쓰므로 함께 휘어짐.
- */
-function applyBend(material: Material, bend: BendUniform, key: string) {
-  material.onBeforeCompile = (shader) => {
-    shader.uniforms.uBend = bend
-    const header = `
-uniform float uBend;
-float bendS(float x) { return clamp((x - ${BOARD_INNER_X.toFixed(5)}) / ${(BOARD_OUTER_X - BOARD_INNER_X).toFixed(5)}, 0.0, 1.0); }`
-    shader.vertexShader = shader.vertexShader
-      .replace('#include <common>', `#include <common>${header}`)
-      .replace(
-        '#include <beginnormal_vertex>',
-        `#include <beginnormal_vertex>
-{
-  float bs = bendS(position.x);
-  float slope = uBend * 2.0 * bs / ${(BOARD_OUTER_X - BOARD_INNER_X).toFixed(5)};
-  objectNormal = normalize(vec3(objectNormal.x - slope * objectNormal.z, objectNormal.y, objectNormal.z + slope * objectNormal.x));
-}`,
-      )
-      .replace(
-        '#include <begin_vertex>',
-        `#include <begin_vertex>
-{ float bs = bendS(position.x); transformed.z += uBend * bs * bs; }`,
-      )
+/** 면지의 아주 옅은 얼룩 — 세월에 바랜 종이 느낌 (곱해지는 밝기 텍스처) */
+function createStainTexture(seed: number) {
+  const w = 256
+  const h = 400
+  const c = document.createElement('canvas')
+  c.width = w
+  c.height = h
+  const ctx = c.getContext('2d')!
+  ctx.fillStyle = '#ffffff'
+  ctx.fillRect(0, 0, w, h)
+  const noise = createNoise(seed)
+  const rnd = (i: number, k: number) => 0.5 + 0.5 * noise.noise(i * 3.7, k * 1.3)
+  for (let i = 0; i < 14; i++) {
+    const x = rnd(i, 1) * w
+    const y = rnd(i, 2) * h
+    const r = 18 + rnd(i, 3) * 70
+    const g = ctx.createRadialGradient(x, y, r * 0.2, x, y, r)
+    const a = 0.03 + rnd(i, 4) * 0.05
+    g.addColorStop(0, `rgba(150, 118, 70, ${a})`)
+    g.addColorStop(0.75, `rgba(150, 118, 70, ${a * 0.6})`)
+    g.addColorStop(1, 'rgba(150, 118, 70, 0)')
+    ctx.fillStyle = g
+    ctx.fillRect(x - r, y - r, r * 2, r * 2)
   }
-  material.customProgramCacheKey = () => key
+  // 가장자리로 갈수록 살짝 더 바램
+  const v = ctx.createRadialGradient(w / 2, h / 2, Math.min(w, h) * 0.3, w / 2, h / 2, Math.max(w, h) * 0.65)
+  v.addColorStop(0, 'rgba(140, 110, 60, 0)')
+  v.addColorStop(1, 'rgba(140, 110, 60, 0.07)')
+  ctx.fillStyle = v
+  ctx.fillRect(0, 0, w, h)
+  const tex = new CanvasTexture(c)
+  tex.colorSpace = SRGBColorSpace
+  return tex
 }
 
 /** 앞/뒤 표지판. 좌표는 책 기준 절대 위치 (앞표지는 Book에서 경첩 그룹으로 감쌈) */
@@ -184,10 +189,16 @@ export default function Board({ side, cornerScale, seed, bend, endpaper = false 
   }, [bend])
 
   const endpaperMaterial = useMemo(() => {
-    const m = new MeshStandardMaterial({ color: ENDPAPER_COLOR, roughness: 1, metalness: 0, side: DoubleSide })
+    const m = new MeshStandardMaterial({
+      color: ENDPAPER_COLOR,
+      map: createStainTexture(seed + 100),
+      roughness: 1,
+      metalness: 0,
+      side: DoubleSide,
+    })
     if (bend) applyBend(m, bend, 'endpaper-bend')
     return m
-  }, [bend])
+  }, [bend, seed])
 
   return (
     <group name={side === 'front' ? 'frontBoard' : 'backBoard'}>

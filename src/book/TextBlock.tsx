@@ -1,12 +1,11 @@
 import { useMemo } from 'react'
+import { useFrame } from '@react-three/fiber'
 import { MeshStandardMaterial, Shape } from 'three'
 import { toCreasedNormals } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
 import {
   ARC_CENTER_X,
   PAGE_COLOR,
   PAGE_ROUGHNESS,
-  PAGE_SHEET_DENSITY,
-  PAGE_SIGNATURE_DENSITY,
   TB_BACK_HALF_ANGLE,
   TB_CORNER_X,
   TB_FORE_CONCAVE,
@@ -16,6 +15,8 @@ import {
   TB_RADIUS,
 } from './bookConfig'
 import { arcPoints, extrudeAlongY } from './geometryUtils'
+import { GRAIN_HEADER, grainUniforms } from './paperGrain'
+import { rightThickness, TOTAL_THICK } from '../riffle/stackGeometry'
 
 /** 단면: 등 쪽은 볼록한 원호(rounded back), 책배 쪽은 살짝 오목 */
 function createTextBlockGeometry() {
@@ -33,60 +34,53 @@ function createTextBlockGeometry() {
 }
 
 /**
- * 종이 결 재질 — 두께(z) 방향으로 얇은 종이 장과 접장 묶음 경계를 셰이더로 그림.
- * 멀리서 줄무늬가 지글거리지 않도록 화면 밀도(fwidth)에 따라 자연스럽게 흐려짐.
+ * 오른쪽 속지 더미 재질 — 바닥(뒤표지 쪽)은 고정, 윗면 높이를 uThick 으로 실시간 조절.
+ * 펼친 위치가 뒤로 갈수록(왼쪽 더미가 두꺼워질수록) 얇아짐. 옆면에는 종이 결.
  */
-function createPageMaterial() {
+function createPageMaterial(thick: { value: number }) {
   const m = new MeshStandardMaterial({ color: PAGE_COLOR, roughness: PAGE_ROUGHNESS })
   m.onBeforeCompile = (shader) => {
-    shader.uniforms.uSheet = { value: PAGE_SHEET_DENSITY }
-    shader.uniforms.uSig = { value: PAGE_SIGNATURE_DENSITY }
+    Object.assign(shader.uniforms, grainUniforms(), { uThick: thick })
     shader.vertexShader = shader.vertexShader
-      .replace('#include <common>', '#include <common>\nvarying vec3 vObjPos;\nvarying vec3 vObjNormal;')
-      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvObjPos = position;\nvObjNormal = normal;')
+      .replace(
+        '#include <common>',
+        `#include <common>
+uniform float uThick;
+varying vec3 vObjPos;
+varying vec3 vObjNormal;`,
+      )
+      .replace(
+        '#include <begin_vertex>',
+        `#include <begin_vertex>
+transformed.z = ${(-TB_HALF_THICK).toFixed(5)} + (position.z + ${TB_HALF_THICK.toFixed(5)}) * (uThick / ${TOTAL_THICK.toFixed(5)});
+vObjPos = transformed;
+vObjNormal = normal;`,
+      )
     shader.fragmentShader = shader.fragmentShader
       .replace(
         '#include <common>',
         `#include <common>
 varying vec3 vObjPos;
 varying vec3 vObjNormal;
-uniform float uSheet;
-uniform float uSig;
-float pageHash(float n) { return fract(sin(n * 12.9898) * 43758.5453); }`,
+${GRAIN_HEADER}`,
       )
       .replace(
         '#include <color_fragment>',
         `#include <color_fragment>
-{
-  // 종이 한 장 한 장
-  float t = vObjPos.z * uSheet;
-  float f = fract(t);
-  float fade = 1.0 - smoothstep(0.2, 0.7, fwidth(t));
-  float seam = 1.0 - smoothstep(0.0, 0.3, min(f, 1.0 - f));
-  float sheet = mix(0.95, 1.03, pageHash(floor(t)));
-  float shade = mix(1.0, sheet * (1.0 - 0.08 * seam), fade);
-
-  // 접장(signature) 묶음 경계 — 조금 더 굵고 진하게, 위치도 살짝 불규칙
-  float s = vObjPos.z * uSig + 0.15 * sin(vObjPos.y * 3.1 + vObjPos.x * 7.0);
-  float g = fract(s);
-  float sigFade = 1.0 - smoothstep(0.15, 0.5, fwidth(s));
-  float sigLine = 1.0 - smoothstep(0.0, 0.05, min(g, 1.0 - g));
-  shade *= 1.0 - 0.16 * sigLine * sigFade;
-
-  // 첫 페이지(앞/뒷면, 법선이 z 방향): 종이 결 선 없이 고른 크림색 종이
-  float flatPage = smoothstep(0.7, 0.95, abs(normalize(vObjNormal).z));
-  shade = mix(shade, 1.0, flatPage);
-
-  diffuseColor.rgb *= shade;
-}`,
+diffuseColor.rgb *= paperGrain(vObjPos.z, vObjPos, vObjNormal);`,
       )
   }
   m.customProgramCacheKey = () => 'book-pages'
   return m
 }
 
+/** 오른쪽 속지 더미 (닫힌 상태에서는 속지 뭉치 전체) */
 export default function TextBlock() {
   const geometry = useMemo(() => createTextBlockGeometry(), [])
-  const material = useMemo(() => createPageMaterial(), [])
+  const thick = useMemo(() => ({ value: TOTAL_THICK }), [])
+  const material = useMemo(() => createPageMaterial(thick), [thick])
+  useFrame(() => {
+    thick.value = rightThickness()
+  })
   return <mesh name="textBlock" geometry={geometry} material={material} />
 }

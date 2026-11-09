@@ -20,6 +20,7 @@ import {
   TB_CORNER_X,
   TB_HALF_THICK,
 } from './bookConfig'
+import { isSplit } from '../riffle/stackGeometry'
 
 /*
  * 앞표지 경첩 연결부 — 표지가 열려도 책과 떨어져 보이지 않도록 매 프레임 모양을 다시 계산.
@@ -145,6 +146,7 @@ export default function Hinge({ getAngle }: Props) {
 
   useFrame(() => {
     const th = getAngle()
+    if (paper.current) paper.current.visible = !isSplit()
     if (th === last.current) return
     last.current = th
     const d: V2 = [Math.cos(th), Math.sin(th)] // 회전한 표지 판이 뻗는 방향
@@ -164,7 +166,9 @@ export default function Hinge({ getAngle }: Props) {
       updateRibbon(clothGeo, c.pts, c.tangents, SPINE_COVER_THICKNESS, BOOK_HEIGHT / 2)
     }
 
-    // 2) 면지 경첩 — 첫 페이지에서 책등 쪽으로 가다가 표지 안쪽으로 넘어감
+    // 2) 면지 경첩 — 첫 페이지에서 책등 쪽으로 가다가 표지 안쪽으로 넘어감.
+    //    페이지가 넘어가 좌/우 더미로 나뉘면 제본 골 곡면(GutterBridge)이 이 자리를 대신함
+    if (paper.current) paper.current.visible = !isSplit()
     const E = rotate(PAPER_END_CLOSED[0], PAPER_END_CLOSED[1], th)
     const k = Math.max(0.012, PAPER_CURVE_K * Math.hypot(E[0] - PAPER_START[0], E[1] - PAPER_START[1]))
     const p = sampleCurve(PAPER_START, [PAPER_START[0] - k, PAPER_START[1]], [E[0] - d[0] * k, E[1] - d[1] * k], E)

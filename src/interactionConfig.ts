@@ -26,8 +26,23 @@ export const BEND_PEAK_AT = 0.4
 /** 클릭으로 인정하는 최대 포인터 이동 거리(px). 이보다 많이 움직이면 드래그(회전)로 봄 */
 export const CLICK_MAX_MOVE_PX = 6
 
-/** 열린 상태 카메라 — 위에서 비스듬히 내려다보는 각도 */
-export const OPEN_CAMERA_POSITION: [number, number, number] = [0, 2.1, 4.9]
+/**
+ * 열린 상태 카메라 — 책상 위 책을 거의 수직으로 내려다보는 시점.
+ * 펼친 책 + 메모 내려놓을 여백(OPEN_VIEW_*)이 화면에 다 들어오도록 화면 비율에 맞춰 거리 계산.
+ */
+export const OPEN_VIEW_WIDTH = 4.3
+export const OPEN_VIEW_HEIGHT = 3.1
+export const OPEN_VIEW_TILT = 6 * DEG // 완전 수직에서 살짝만 기울임
+
+export function openCameraPosition(aspect: number, fovDeg: number): [number, number, number] {
+  const t = Math.tan((fovDeg * DEG) / 2)
+  const d = Math.max(OPEN_VIEW_HEIGHT / 2 / t, OPEN_VIEW_WIDTH / 2 / (t * aspect))
+  return [0, d * Math.sin(OPEN_VIEW_TILT), d * Math.cos(OPEN_VIEW_TILT)]
+}
+
+/** 열린 상태에서 허용하는 기울이기 범위 (수직 기준 위아래 / 좌우) */
+export const OPEN_TILT_LIMIT = 18 * DEG
+export const OPEN_AZIMUTH_LIMIT = 15 * DEG
 
 /**
  * 열렸을 때 책을 옆으로 옮기는 거리 — 펼친 폭(왼쪽: 열린 앞표지 끝 ~ 오른쪽: 뒤표지 책배)의
